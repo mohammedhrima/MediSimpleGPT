@@ -3,6 +3,7 @@
     "description": "Detects typos and suggests corrections before searching",
     "template": "Analyze this user query: \"{query}\"\n\nIf the query is very short (1-2 words) or contains obvious typos/misspellings, suggest 2-3 possible medical terms they might mean.\nIf the query is clear and makes sense, respond with \"CLEAR\".\n\nExamples:\n- \"diabiities\" -> TYPO: Did you mean: 1) diabetes, 2) disabilities?\n- \"Uhi\" -> TYPO: Did you mean: 1) UTI (urinary tract infection), 2) UI (urticaria/hives)?\n- \"what is diabetes\" -> CLEAR\n\nFormat:\n- If unclear: \"TYPO: Did you mean: 1) term1, 2) term2?\"\n- If clear: \"CLEAR\"\n\nResponse:",
     "variables": ["query"]
+    
   },
   "simplification": {
     "description": "Simplifies medical content for non-medical audience",
