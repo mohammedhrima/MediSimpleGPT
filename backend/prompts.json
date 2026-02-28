@@ -1,0 +1,27 @@
+{
+  "typo_detection": {
+    "description": "Detects typos and suggests corrections before searching",
+    "template": "Analyze this user query: \"{query}\"\n\nIf the query is very short (1-2 words) or contains obvious typos/misspellings, suggest 2-3 possible medical terms they might mean.\nIf the query is clear and makes sense, respond with \"CLEAR\".\n\nExamples:\n- \"diabiities\" -> TYPO: Did you mean: 1) diabetes, 2) disabilities?\n- \"Uhi\" -> TYPO: Did you mean: 1) UTI (urinary tract infection), 2) UI (urticaria/hives)?\n- \"what is diabetes\" -> CLEAR\n\nFormat:\n- If unclear: \"TYPO: Did you mean: 1) term1, 2) term2?\"\n- If clear: \"CLEAR\"\n\nResponse:",
+    "variables": ["query"]
+  },
+  "simplification": {
+    "description": "Simplifies medical content for non-medical audience",
+    "template": "{context}User question: {query}\n\nProvide a clear, simple explanation that:\n- Answers their question directly\n- Uses everyday language\n- Avoids medical jargon or explains it\n- Is conversational and friendly\n- Keeps it concise (2-3 paragraphs)\n- If it's a follow-up, build on previous context\n\nResponse:",
+    "variables": ["context", "query"]
+  },
+  "action_planning": {
+    "description": "Plans browser automation actions based on DOM and instruction",
+    "template": "You are a web automation agent. Analyze the DOM and plan actions to complete the task.\n\nDOM Elements (visible only):\n{dom}\n\nTask: {instruction}\n\nCRITICAL Rules:\n1. For autocomplete: fill input → wait 500ms → click the li with matching text → click visible submit button\n2. Use specific selectors: li:has-text(\"keyword\") or button:visible\n3. Avoid hidden buttons (check visible:true in DOM)\n4. Return ONLY valid JSON array\n\nExample for autocomplete search:\n[{{\"type\": \"fill\", \"selector\": \"#searchInput\", \"value\": \"diabetes\"}}, {{\"type\": \"wait\"}}, {{\"type\": \"click\", \"selector\": \"li:has-text('diabetes')\"}}, {{\"type\": \"click\", \"selector\": \"button:visible:has-text('Search')\"}}]\n\nJSON only:",
+    "variables": ["dom", "instruction"]
+  },
+  "article_simplification": {
+    "description": "Simplifies medical articles for non-medical audience",
+    "template": "You are a medical content simplifier. Read this medical article and explain it in simple terms for a non-medical person.\n\nArticle:\n{content}\n\nInstructions:\n- Use simple, everyday language\n- Avoid medical jargon or explain it when necessary\n- Break down complex concepts\n- Use analogies when helpful\n- Keep it conversational and friendly\n- Focus on key points\n\nSimplified explanation:",
+    "variables": ["content"]
+  },
+  "confirmation_detection": {
+    "description": "Detects if user is confirming a previous suggestion",
+    "template": "The assistant previously suggested: \"{suggestion}\"\n\nUser responded: \"{query}\"\n\nDetermine if the user is confirming one of the suggestions.\n\nExamples:\n- \"yes\" -> CONFIRMED: [extract first suggested term]\n- \"1\" or \"option 1\" -> CONFIRMED: [extract term from option 1]\n- \"2\" or \"the second one\" -> CONFIRMED: [extract term from option 2]\n- \"diabetes\" -> CONFIRMED: diabetes\n- \"no\" or \"something else\" -> NOT_CONFIRMED\n\nFormat:\n- If confirmed: \"CONFIRMED: [exact term]\"\n- If not: \"NOT_CONFIRMED\"\n\nResponse:",
+    "variables": ["suggestion", "query"]
+  }
+}
