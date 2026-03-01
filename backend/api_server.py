@@ -15,11 +15,22 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 # ─────────────────────────────────────────────
-# Logging
+# Logging configuration
 # ─────────────────────────────────────────────
 log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper())
-logging.basicConfig(level=log_level)
-logger = logging.getLogger(__name__)
+
+# Configure consistent logging format
+logging.basicConfig(
+    level=log_level,
+    format='%(levelname)s:     %(name)s: %(message)s',
+    force=True 
+)
+
+# Set specific logger levels to reduce noise
+logging.getLogger("httpx").setLevel(logging.WARNING)  # Reduce httpx verbosity
+logging.getLogger("httpcore").setLevel(logging.WARNING)  # Reduce httpcore verbosity
+
+logger = logging.getLogger("api_server")
 
 # ─────────────────────────────────────────────
 # Configuration from environment variables
@@ -293,32 +304,32 @@ async def execute_actions(request: ExecuteRequest):
                 if action_type == "fill":
                     await current_page.fill(selector, value, timeout=ACTION_TIMEOUT)
                     await current_page.wait_for_timeout(300)
-                    results.append(f"✓ Filled '{selector}' with '{value}'")
+                    results.append(f"[OK] Filled '{selector}' with '{value}'")
 
                 elif action_type == "click":
                     await current_page.click(selector, timeout=ACTION_TIMEOUT)
                     await current_page.wait_for_timeout(300)
-                    results.append(f"✓ Clicked '{selector}'")
+                    results.append(f"[OK] Clicked '{selector}'")
 
                 elif action_type == "press":
                     await current_page.press(selector, key, timeout=ACTION_TIMEOUT)
-                    results.append(f"✓ Pressed '{key}' on '{selector}'")
+                    results.append(f"[OK] Pressed '{key}' on '{selector}'")
 
                 elif action_type == "wait":
                     if selector:
                         await current_page.wait_for_selector(selector, state="visible", timeout=ACTION_TIMEOUT)
-                        results.append(f"✓ Element visible: '{selector}'")
+                        results.append(f"[OK] Element visible: '{selector}'")
                     else:
                         await current_page.wait_for_timeout(800)
-                        results.append("✓ Waited 800ms")
+                        results.append("[OK] Waited 800ms")
 
                 else:
-                    results.append(f"⚠ Unknown action type: '{action_type}'")
+                    results.append(f"! Unknown action type: '{action_type}'")
 
             except PlaywrightTimeout:
-                results.append(f"✗ Timeout on {action_type} '{selector}'")
+                results.append(f"[TIMEOUT] {action_type} '{selector}'")
             except Exception as e:
-                results.append(f"✗ Error on {action_type} '{selector}': {e}")
+                results.append(f"[ERROR] {action_type} '{selector}': {e}")
 
         logger.info(f"Execution complete: {len(results)} steps")
         return {"status": "success", "results": results}
@@ -435,6 +446,19 @@ async def chat(request: dict):
                 await save_message(session_id, "user", query)
                 await save_message(session_id, "assistant", clarification)
                 return {"response": clarification}
+
+        # ── Step 4.5: Meta-query detection — skip Wikipedia for questions about the conversation ──
+        META_PATTERNS = [
+            "pain point", "pain points", "summary", "summarize", "our conversation",
+            "what did we", "what have we", "what was discussed", "recap", "what did i ask",
+            "what did you say", "give me a", "list the", "bullet point", "in short",
+            "in brief", "tldr", "tl;dr", "key points", "main points", "highlights",
+        ]
+        query_lower = query.lower()
+        is_meta = any(pattern in query_lower for pattern in META_PATTERNS)
+        if is_meta and history:
+            logger.info("Meta/conversational query detected — skipping Wikipedia")
+            is_followup = True  # force the follow-up path so history is used as context
 
         # ── Step 5: Fetch Wikipedia for new topics ──
         if not is_followup:

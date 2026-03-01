@@ -210,7 +210,7 @@ function ChatInterface() {
             title="Clear conversation"
             // disabled={messages.length === 0}
           >
-            {clearFeedback ? '✓ Cleared' : 'Clear chat'}
+            {clearFeedback ? 'Cleared' : 'Clear chat'}
           </button>
         </div>
       </header>

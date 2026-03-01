@@ -1,6 +1,53 @@
-# MediSimpleGPT
+<div align="center">
+  <img src="frontend/public/favicon.svg" alt="MediSimpleGPT Logo" width="80" height="80">
+  
+  # MediSimpleGPT
+  
+  Local-first medical assistant chat app powered by Ollama, with Wikipedia-based retrieval and a Playwright-driven browser agent under the hood.
+</div>
 
-Local-first medical assistant chat app powered by Ollama, with Wikipedia-based retrieval and a Playwright-driven browser agent under the hood.
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Overview](#overview)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Prerequisites](#prerequisites)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [API Documentation](#api-documentation)
+- [Project Structure](#project-structure)
+- [Environment Variables](#environment-variables)
+- [Useful Commands](#useful-commands)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Quick Start
+
+**Already have all dependencies?** Jump straight to running the app:
+
+```bash
+# 1. Clone and setup
+git clone <repository-url>
+cd MediSimpleGPT
+make install
+
+# 2. Start Ollama (in separate terminal)
+ollama serve
+
+# 3. Run the application (in two terminals)
+make backend   # Terminal 1: http://127.0.0.1:8000
+make frontend  # Terminal 2: http://localhost:5173
+```
+
+**Need to install dependencies?** → [Go to Prerequisites](#prerequisites)
+
+**Having issues?** → [Go to Troubleshooting](#troubleshooting)
+
+---
+
+## Overview
 
 This repo contains:
 
@@ -16,50 +63,171 @@ This repo contains:
   - Persists conversations per `session_id`.
   - Uses Wikipedia as a retrieval source for new topics.
   - Detects typos for short medical-term queries and asks for confirmation.
+  - Handles conversational queries like "summarize our discussion" or "what are the pain points".
 - **DOM-driven web automation**
   - `POST /connect` opens a browser and extracts a simplified list of visible elements.
   - `POST /plan` turns `{dom + instruction}` into a JSON action plan.
   - `POST /execute` executes those actions in the browser.
   - `POST /simplify` extracts “article-like” content from the current page and simplifies it.
 
-## Tech stack
+## Tech Stack
 
 - **Backend**: Python, FastAPI, Uvicorn, Playwright, Ollama, SQLite (`aiosqlite`)
 - **Frontend**: React, TypeScript, Vite, TanStack Query, Axios
 
 ## Prerequisites
 
+### System Requirements
+
 - **Python**: `>= 3.13` (see `backend/pyproject.toml`)
-- **uv** (Python package manager) - [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
-- **Node.js + npm** (for the frontend)
-- **Ollama** installed and running locally
+- **Node.js**: `>= 18.0.0` (for npm and Vite)
+- **Operating System**: macOS, Linux, or Windows
 
-### Installing Ollama
+### Installing Dependencies
 
-1. **Install Ollama**:
-   - **macOS**: `brew install ollama` or download from [ollama.com](https://ollama.com)
-   - **Linux**: `curl -fsSL https://ollama.com/install.sh | sh`
-   - **Windows**: Download from [ollama.com](https://ollama.com)
+#### 1. **Python 3.13+**
 
-2. **Start Ollama service**:
-   ```bash
-   ollama serve
-   ```
+**macOS**:
+```bash
+# Using Homebrew (recommended)
+brew install python@3.13
 
-3. **Download the required model**:
-   ```bash
-   ollama pull granite3.1-dense:8b
-   ```
-   
-   **Note**: You can change the model by setting `OLLAMA_MODEL` in `backend/.env`. The default is `granite3.1-dense:8b`.
+# Or download from python.org
+# Visit: https://www.python.org/downloads/
+```
 
-4. **Verify installation**:
-   ```bash
-   ollama list
-   ```
-   You should see your chosen model in the list of available models.
+**Linux (Ubuntu/Debian)**:
+```bash
+# Add deadsnakes PPA for latest Python versions
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.13 python3.13-venv python3.13-pip
+```
 
-### Configuration
+**Windows**:
+```bash
+# Download from python.org and run installer
+# Visit: https://www.python.org/downloads/
+# Make sure to check "Add Python to PATH" during installation
+```
+
+#### 2. **uv (Python Package Manager)**
+
+**All Platforms**:
+```bash
+# Using pip (after Python is installed)
+pip install uv
+
+# Or using curl (macOS/Linux)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or using PowerShell (Windows)
+powershell -c "irm https://astral.sh/uv/install.sh | iex"
+
+# Or using Homebrew (macOS)
+brew install uv
+```
+
+**Verify installation**:
+```bash
+uv --version
+```
+
+#### 3. **Node.js and npm**
+
+**macOS**:
+```bash
+# Using Homebrew (recommended)
+brew install node
+
+# Or download from nodejs.org
+# Visit: https://nodejs.org/
+```
+
+**Linux (Ubuntu/Debian)**:
+```bash
+# Using NodeSource repository (recommended)
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Or using snap
+sudo snap install node --classic
+```
+
+**Windows**:
+```bash
+# Download from nodejs.org and run installer
+# Visit: https://nodejs.org/
+# npm is included with Node.js
+```
+
+**Verify installation**:
+```bash
+node --version
+npm --version
+```
+
+#### 4. **Ollama**
+
+**macOS**:
+```bash
+# Using Homebrew (recommended)
+brew install ollama
+
+# Or download from ollama.com
+# Visit: https://ollama.com
+```
+
+**Linux**:
+```bash
+# Using curl
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**Windows**:
+```bash
+# Download from ollama.com
+# Visit: https://ollama.com
+```
+
+**Start Ollama service**:
+```bash
+ollama serve
+```
+
+**Download the required model**:
+```bash
+ollama pull granite3.1-dense:8b
+```
+
+**Verify installation**:
+```bash
+ollama list
+# You should see granite3.1-dense:8b in the list
+```
+
+> **Note**: You can change the model by setting `OLLAMA_MODEL` in `.env`. The default is `granite3.1-dense:8b`.
+
+### Quick Dependency Check
+
+After installing all dependencies, verify everything is working:
+
+```bash
+# Check Python
+python3 --version  # Should be 3.13+
+
+# Check uv
+uv --version
+
+# Check Node.js and npm
+node --version      # Should be 18+
+npm --version
+
+# Check Ollama
+ollama list         # Should show your installed models
+```
+
+## Configuration
 
 The application uses a single environment file for configuration:
 
@@ -76,9 +244,9 @@ Key configuration options:
 
 The `make install` command will automatically create `.env` file from the example if it doesn't exist.
 
-## Quickstart
+## Running the Application
 
-### 1) Install
+### 1. Install Dependencies
 
 ```bash
 make install
@@ -90,7 +258,7 @@ This runs:
 - `playwright install chromium` for the backend
 - `npm install` for the frontend
 
-### 2) Run
+### 2. Start the Services
 
 In two terminals:
 
@@ -107,7 +275,7 @@ Then open:
 - Frontend: `http://localhost:5173`
 - Backend: `http://127.0.0.1:8000`
 
-## Backend API
+## API Documentation
 
 Base URL: `http://127.0.0.1:8000`
 
@@ -146,12 +314,12 @@ Base URL: `http://127.0.0.1:8000`
 - `POST /simplify`
   - Extracts article-like content from the current page and simplifies it.
 
-## Data & state
+## Data & State
 
 - **Chat history DB**: `backend/conversations.db` (SQLite)
 - **Browser state**: the backend keeps a single global browser/page (single-user assumption).
 
-## Project structure
+## Project Structure
 
 ```text
 .
@@ -169,7 +337,7 @@ Base URL: `http://127.0.0.1:8000`
 └─ Makefile
 ```
 
-## Useful commands
+## Useful Commands
 
 - `make install` - Install all dependencies and setup environment
 - `make setup-env` - Create .env files from examples
@@ -200,6 +368,30 @@ All configuration is managed through a single `.env` file at the project root:
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ## Troubleshooting
+
+### Installation Issues
+
+- **Python version errors**
+  - Ensure you have Python 3.13+: `python3 --version`
+  - On some systems, use `python3.13` instead of `python3`
+  - Make sure Python is in your PATH
+
+- **uv installation issues**
+  - If `pip install uv` fails, try the curl method: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - Restart your terminal after installation
+  - On Windows, you may need to add uv to your PATH manually
+
+- **Node.js/npm issues**
+  - Use Node.js LTS version (18+) for best compatibility
+  - If npm is slow, try using a different registry: `npm config set registry https://registry.npmjs.org/`
+  - Clear npm cache if having issues: `npm cache clean --force`
+
+- **Ollama installation issues**
+  - Make sure Ollama service is running: `ollama serve`
+  - If model download fails, check your internet connection and try again
+  - On Linux, you may need to add your user to the ollama group
+
+### Runtime Issues
 
 - **Ollama errors / empty responses**
   - Make sure Ollama is running: `ollama serve`

@@ -1,4 +1,4 @@
-# ⚕ MediSimpleGPT — Developer Reference & Demo Guide
+# MediSimpleGPT — Developer Reference & Demo Guide
 > Focus: MCP · FastAPI · Playwright · Ollama
 
 Project name: **MediSimpleGPT**
@@ -22,7 +22,7 @@ MediSimple has three independent layers. The React frontend talks only to the Fa
 |---|---|---|
 | App.tsx · hooks.ts · axios → REST API | Ollama · Playwright · SQLite · prompts.json | Exposes tools to AI agents via MCP protocol over stdio |
 
-### Chat Request Flow — 7 Steps
+### Chat Request Flow — 8 Steps
 
 Every message the user sends goes through this pipeline in order:
 
@@ -31,11 +31,14 @@ Every message the user sends goes through this pipeline in order:
 3. **Step 2** — Follow-up detection LLM call: is this the same topic as before? Runs **before** typo detection to protect follow-up messages (e.g. "explain it like I'm 5") from false-positive typo flags. Skipped if `just_confirmed`.
 4. **Step 3** — Greeting check: if "hello/hi/hey" → reply directly, skip everything else.
 5. **Step 4** — Typo detection LLM call: is the query a misspelled medical term? **Skipped entirely for follow-ups and confirmed terms.**
-6. **Step 5** — If new topic: open Chromium, search Wikipedia, extract article text. Always runs after a confirmation regardless of history.
-7. **Step 6** — Send context + history to Ollama → get simplified response.
-8. **Step 7** — Save both messages to SQLite, return response to React.
+6. **Step 4.5** — Meta-query detection: detects conversational queries like "pain points", "summary", "what did we discuss" and forces follow-up path to use conversation history instead of Wikipedia.
+7. **Step 5** — If new topic: open Chromium, search Wikipedia, extract article text. Always runs after a confirmation regardless of history.
+8. **Step 6** — Send context + history to Ollama → get simplified response.
+9. **Step 7** — Save both messages to SQLite, return response to React.
 
-> ⚠️ **Order matters** — Typo detection originally ran before follow-up detection. This caused follow-up messages like "give me more info, explain like I'm 5" to be incorrectly flagged as medical typos. The fix was to run follow-up detection first and gate typo detection behind it.
+**Order matters** — Typo detection originally ran before follow-up detection. This caused follow-up messages like "give me more info, explain like I'm 5" to be incorrectly flagged as medical typos. The fix was to run follow-up detection first and gate typo detection behind it.
+
+**Meta-query Enhancement** — Step 4.5 was added to handle conversational queries that reference the chat history rather than medical topics. Patterns like "pain points", "summary", "what did we discuss" now skip Wikipedia and use conversation context instead.
 
 ---
 
@@ -89,7 +92,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 ```
 
-> 📚 **Study This** — "What is a context manager in Python?" — An object with `__enter__` and `__exit__` methods (or async versions). The `async` keyword means it can await I/O. `yield` splits setup (before) from teardown (after). The `with` statement calls `__enter__` on entry and `__exit__` on exit — even if an exception is raised.
+**Study This** — "What is a context manager in Python?" — An object with `__enter__` and `__exit__` methods (or async versions). The `async` keyword means it can await I/O. `yield` splits setup (before) from teardown (after). The `with` statement calls `__enter__` on entry and `__exit__` on exit — even if an exception is raised.
 
 ---
 
@@ -111,7 +114,7 @@ async def get_or_create_browser():
 # Same as Optional[Browser] in older Python
 ```
 
-> ⚠️ **Watch Out** — Global state is fine for a single-user demo. In production with multiple users, you would need a browser pool — one browser context per user session. Otherwise two users could interfere with each other's pages.
+**Watch Out** — Global state is fine for a single-user demo. In production with multiple users, you would need a browser pool — one browser context per user session. Otherwise two users could interfere with each other's pages.
 
 ---
 
@@ -128,7 +131,7 @@ def get_prompt(prompt_name: str, **variables) -> str:
     # Result:   "Explain diabetes in simple terms"
 ```
 
-> 📚 **Study This** — "What does `**kwargs` mean?" — Double-star unpacks keyword arguments into a dictionary. `get_prompt("x", query="hi", context="...")` makes `variables = {"query": "hi", "context": "..."}`. Then `template.format(**variables)` passes them as named arguments to the format string. Interviewers test `*args` and `**kwargs` frequently.
+**Study This** — "What does `**kwargs` mean?" — Double-star unpacks keyword arguments into a dictionary. `get_prompt("x", query="hi", context="...")` makes `variables = {"query": "hi", "context": "..."}`. Then `template.format(**variables)` passes them as named arguments to the format string. Interviewers test `*args` and `**kwargs` frequently.
 
 ---
 
@@ -152,9 +155,9 @@ def llm(prompt: str, messages: list | None = None) -> str:
 #                 ])
 ```
 
-> ℹ️ **How It Works** — Ollama runs the LLM completely locally on your machine. No API key, no internet, no cost per call. It listens on `localhost:11434` by default (configurable via `OLLAMA_HOST`). The model is configurable via `OLLAMA_MODEL` environment variable.
+**How It Works** — Ollama runs the LLM completely locally on your machine. No API key, no internet, no cost per call. It listens on `localhost:11434` by default (configurable via `OLLAMA_HOST`). The model is configurable via `OLLAMA_MODEL` environment variable.
 
-> ⚠️ **Watch Out** — `llm()` is a synchronous function called from an async FastAPI endpoint. This blocks the event loop for the duration of the LLM call. Fine for a single-user demo; in production, use `asyncio.to_thread()` or an async Ollama client to avoid blocking other requests.
+**Watch Out** — `llm()` is a synchronous function called from an async FastAPI endpoint. This blocks the event loop for the duration of the LLM call. Fine for a single-user demo; in production, use `asyncio.to_thread()` or an async Ollama client to avoid blocking other requests.
 
 ---
 
@@ -186,6 +189,30 @@ Without this flag, two bugs occur: (1) the confirmed term gets re-checked for ty
 
 ---
 
+### 2.8 Meta-Query Detection (Step 4.5)
+
+A new enhancement that detects when users ask conversational questions about the chat history rather than medical topics:
+
+```python
+META_PATTERNS = [
+    "pain point", "pain points", "summary", "summarize", "our conversation",
+    "what did we", "what have we", "what was discussed", "recap", "what did i ask",
+    "what did you say", "give me a", "list the", "bullet point", "in short",
+    "in brief", "tldr", "tl;dr", "key points", "main points", "highlights",
+]
+query_lower = query.lower()
+is_meta = any(pattern in query_lower for pattern in META_PATTERNS)
+if is_meta and history:
+    logger.info("Meta/conversational query detected — skipping Wikipedia")
+    is_followup = True  # force the follow-up path so history is used as context
+```
+
+**Why This Matters**: Without this detection, queries like "give me the pain points of diabetes" would trigger a Wikipedia search for "pain points" instead of summarizing the diabetes information already discussed in the conversation.
+
+**Implementation**: When a meta-pattern is detected and conversation history exists, the system forces the follow-up path, ensuring the response draws from conversation context rather than fetching new Wikipedia content.
+
+---
+
 ### 2.7 API Endpoints
 
 | Endpoint | What it does |
@@ -203,7 +230,7 @@ Without this flag, two bugs occur: (1) the confirmed term gets re-checked for ty
 
 ## 3. MCP Server — server.py
 
-> ℹ️ **How It Works** — MCP = Model Context Protocol. An open standard created by Anthropic that lets AI models call external tools through a defined interface. Think: REST API, but designed specifically for AI agents to discover and use tools automatically.
+**How It Works** — MCP = Model Context Protocol. An open standard created by Anthropic that lets AI models call external tools through a defined interface. Think: REST API, but designed specifically for AI agents to discover and use tools automatically.
 
 ### 3.1 What MCP Is and Why It Exists
 
@@ -231,7 +258,7 @@ async def connect_browser(url: str) -> str:
     ...
 ```
 
-> 📚 **Study This** — "How does the AI know which tool to call?" — The MCP client sends the AI a list of all available tools with their names, docstrings, and parameter schemas (auto-generated from type hints). The LLM reads these and picks the best fit. This is why **docstrings in an MCP server are part of the API contract** — not just comments.
+**Study This** — "How does the AI know which tool to call?" — The MCP client sends the AI a list of all available tools with their names, docstrings, and parameter schemas (auto-generated from type hints). The LLM reads these and picks the best fit. This is why **docstrings in an MCP server are part of the API contract** — not just comments.
 
 #### Resources — Read-Only Data for the AI
 
@@ -259,7 +286,7 @@ if __name__ == "__main__":
     # FastMCP serializes it back to JSON-RPC for the client
 ```
 
-> 📚 **Study This** — "What transports does MCP support?" — Two options: **stdio** (local process, stdin/stdout, used here) and **SSE/HTTP** (network, for remote or shared servers). Use stdio for local tools running on the same machine as the AI client. Use HTTP/SSE when the server is remote or needs to serve multiple clients simultaneously.
+**Study This** — "What transports does MCP support?" — Two options: **stdio** (local process, stdin/stdout, used here) and **SSE/HTTP** (network, for remote or shared servers). Use stdio for local tools running on the same machine as the AI client. Use HTTP/SSE when the server is remote or needs to serve multiple clients simultaneously.
 
 ---
 
@@ -291,7 +318,7 @@ async def connect_browser(url: str) -> str:
     ...  # FastMCP generates all the schema/routing automatically
 ```
 
-> 📚 **Study This** — "What does `@mcp.tool()` do internally?" — It is a decorator. `@mcp.tool()` is shorthand for: `connect_browser = mcp.tool()(connect_browser)`. Inside, FastMCP uses Python's `inspect` module to read the function signature and type hints, builds the JSON schema, and registers it in an internal tool registry that the MCP protocol layer can query.
+**Study This** — "What does `@mcp.tool()` do internally?" — It is a decorator. `@mcp.tool()` is shorthand for: `connect_browser = mcp.tool()(connect_browser)`. Inside, FastMCP uses Python's `inspect` module to read the function signature and type hints, builds the JSON schema, and registers it in an internal tool registry that the MCP protocol layer can query.
 
 ---
 
@@ -326,7 +353,7 @@ Injects JavaScript into the live page to extract all visible interactive element
 # 4. Returns array of {index, tag, text, id, class, href, ...}
 ```
 
-> 📚 **Study This** — "What is `page.evaluate()`?" — It executes JavaScript code inside the browser page and returns the result to Python. The JS runs in the browser context with full access to `document`, `window`, and DOM APIs. Your DOM extraction runs entirely in the browser — Python just receives the final JSON array. This is one of the most powerful Playwright features.
+**Study This** — "What is `page.evaluate()`?" — It executes JavaScript code inside the browser page and returns the result to Python. The JS runs in the browser context with full access to `document`, `window`, and DOM APIs. Your DOM extraction runs entirely in the browser — Python just receives the final JSON array. This is one of the most powerful Playwright features.
 
 #### `click_best_result`
 
@@ -341,9 +368,9 @@ score = sum(1 for word in search_lower.split() if word in text)
 # → clicks the first result
 ```
 
-> 📚 **Study This** — "What ranking algorithm does this use?" — Term frequency matching: count how many search words appear in the result text. A production system would use **BM25** (better term weighting), or **semantic search** (embeddings/cosine similarity) for meaning-based matching instead of exact keyword matching.
+**Study This** — "What ranking algorithm does this use?" — Term frequency matching: count how many search words appear in the result text. A production system would use **BM25** (better term weighting), or **semantic search** (embeddings/cosine similarity) for meaning-based matching instead of exact keyword matching.
 
-#### `execute_task` — Known Bug ⚠️
+#### `execute_task` — Known Bug
 
 ```python
 # BUG: wait_for_element() is not defined anywhere in server.py
@@ -354,7 +381,7 @@ elif action["type"] == "wait":
 # Fix: replace with page.wait_for_selector() or page.wait_for_timeout()
 ```
 
-> ⚠️ **Watch Out** — If an interviewer runs this code and triggers a wait action, it crashes with `NameError`. Mentioning this bug **proactively** in the demo shows code awareness and attention to detail.
+**Watch Out** — If an interviewer runs this code and triggers a wait action, it crashes with `NameError`. Mentioning this bug **proactively** in the demo shows code awareness and attention to detail.
 
 ---
 
@@ -392,7 +419,7 @@ await page.click("button:has-text('Search')")
 await page.fill('[placeholder="Search Wikipedia"]', query)
 ```
 
-> 📚 **Study This** — "What is the difference between `domcontentloaded` and `networkidle`?" — `domcontentloaded` fires when the HTML is parsed and DOM is ready (fast, ~200ms). `networkidle` fires when there are no more than 0 network connections for 500ms (slow, ~2-5s, but thorough). Use `domcontentloaded` for simple pages, `networkidle` for React/Vue SPAs that load data after mount.
+**Study This** — "What is the difference between `domcontentloaded` and `networkidle`?" — `domcontentloaded` fires when the HTML is parsed and DOM is ready (fast, ~200ms). `networkidle` fires when there are no more than 0 network connections for 500ms (slow, ~2-5s, but thorough). Use `domcontentloaded` for simple pages, `networkidle` for React/Vue SPAs that load data after mount.
 
 ---
 
@@ -412,7 +439,7 @@ async function getData() {        async def get_data():
 }                                              return await r.json()
 ```
 
-> 📚 **Study This** — "What is the GIL?" — Python's Global Interpreter Lock prevents true parallel execution of threads. This is why `async/await` (cooperative concurrency) is preferred for I/O-bound work — when one coroutine is waiting for I/O, others can run. For CPU-bound work, use `multiprocessing` to bypass the GIL.
+**Study This** — "What is the GIL?" — Python's Global Interpreter Lock prevents true parallel execution of threads. This is why `async/await` (cooperative concurrency) is preferred for I/O-bound work — when one coroutine is waiting for I/O, others can run. For CPU-bound work, use `multiprocessing` to bypass the GIL.
 
 ### 5.2 Type Hints
 
@@ -506,7 +533,7 @@ db.execute("SELECT * FROM messages WHERE id = ?", (user_input,))
 # Injection attempt becomes harmless literal text.
 ```
 
-> 📚 **Study This** — "What is SQL injection and how do you prevent it?" — SQL injection happens when user input is inserted directly into a SQL string, letting attackers run arbitrary SQL. Prevention: always use parameterized queries (`?` placeholders). The database driver escapes the values so they can never be interpreted as SQL code. Your codebase already does this correctly.
+**Study This** — "What is SQL injection and how do you prevent it?" — SQL injection happens when user input is inserted directly into a SQL string, letting attackers run arbitrary SQL. Prevention: always use parameterized queries (`?` placeholders). The database driver escapes the values so they can never be interpreted as SQL code. Your codebase already does this correctly.
 
 ---
 
