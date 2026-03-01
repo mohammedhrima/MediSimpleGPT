@@ -30,11 +30,51 @@ This repo contains:
 ## Prerequisites
 
 - **Python**: `>= 3.13` (see `backend/pyproject.toml`)
-- **uv** (Python package manager)
+- **uv** (Python package manager) - [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 - **Node.js + npm** (for the frontend)
 - **Ollama** installed and running locally
-  - Backend model is currently hardcoded to `granite3.1-dense:8b` in `backend/api_server.py`.
-  - You must have that model available in Ollama.
+
+### Installing Ollama
+
+1. **Install Ollama**:
+   - **macOS**: `brew install ollama` or download from [ollama.com](https://ollama.com)
+   - **Linux**: `curl -fsSL https://ollama.com/install.sh | sh`
+   - **Windows**: Download from [ollama.com](https://ollama.com)
+
+2. **Start Ollama service**:
+   ```bash
+   ollama serve
+   ```
+
+3. **Download the required model**:
+   ```bash
+   ollama pull granite3.1-dense:8b
+   ```
+   
+   **Note**: You can change the model by setting `OLLAMA_MODEL` in `backend/.env`. The default is `granite3.1-dense:8b`.
+
+4. **Verify installation**:
+   ```bash
+   ollama list
+   ```
+   You should see your chosen model in the list of available models.
+
+### Configuration
+
+The application uses a single environment file for configuration:
+
+- `.env` - All configuration variables
+- `.env.example` - Example configuration file
+
+Key configuration options:
+
+- **OLLAMA_MODEL**: The Ollama model to use (default: `granite3.1-dense:8b`)
+- **OLLAMA_HOST**: Ollama server URL (default: `http://localhost:11434`)
+- **VITE_API_BASE_URL**: Backend API URL for frontend (default: `http://127.0.0.1:8000`)
+- **BROWSER_HEADLESS**: Run browser in headless mode (default: `false`)
+- **MAX_QUERY_LENGTH**: Maximum query length (default: `500`)
+
+The `make install` command will automatically create `.env` file from the example if it doesn't exist.
 
 ## Quickstart
 
@@ -131,19 +171,59 @@ Base URL: `http://127.0.0.1:8000`
 
 ## Useful commands
 
-- `make install`
-- `make backend`
-- `make frontend`
-- `make clean`
+- `make install` - Install all dependencies and setup environment
+- `make setup-env` - Create .env files from examples
+- `make backend` - Start the backend server
+- `make frontend` - Start the frontend development server
+- `make clean` - Clean build artifacts and dependencies
+
+## Environment Variables
+
+All configuration is managed through a single `.env` file at the project root:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_MODEL` | `granite3.1-dense:8b` | Ollama model to use |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+| `HOST` | `127.0.0.1` | Backend server host |
+| `PORT` | `8000` | Backend server port |
+| `FRONTEND_URL` | `http://localhost:5173` | Frontend URL for CORS |
+| `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Backend API URL (frontend) |
+| `VITE_MAX_QUERY_LENGTH` | `500` | Maximum query length (frontend) |
+| `DB_PATH` | `backend/conversations.db` | SQLite database file path |
+| `MAX_QUERY_LENGTH` | `500` | Maximum query length (backend) |
+| `WIKIPEDIA_BASE` | `https://www.wikipedia.org` | Wikipedia base URL |
+| `BROWSER_HEADLESS` | `false` | Run browser in headless mode |
+| `BROWSER_TIMEOUT` | `15000` | Browser navigation timeout (ms) |
+| `PAGE_TIMEOUT` | `10000` | Page load timeout (ms) |
+| `ACTION_TIMEOUT` | `5000` | Browser action timeout (ms) |
+| `LOG_LEVEL` | `INFO` | Logging level |
 
 ## Troubleshooting
 
 - **Ollama errors / empty responses**
-  - Make sure Ollama is running.
-  - Make sure the model configured in `backend/api_server.py` exists in Ollama.
+  - Make sure Ollama is running: `ollama serve`
+  - Verify the model exists: `ollama list` (should show your configured model)
+  - If model is missing: `ollama pull <model-name>` (e.g., `ollama pull granite3.1-dense:8b`)
+  - Check Ollama is accessible: `curl http://localhost:11434/api/tags`
+  - Verify `OLLAMA_MODEL` in `.env` matches an available model
+
+- **Environment configuration issues**
+  - Ensure `.env` file exists: `make setup-env` will create it from example
+  - Check `.env` has correct values for your setup
+  - Restart services after changing environment variables
 
 - **Playwright browser not launching**
-  - Re-run `uv run playwright install chromium` in `backend/`.
+  - Re-run `uv run python -m playwright install chromium` in `backend/`
+  - Make sure you have sufficient permissions to launch browsers
+  - Try setting `BROWSER_HEADLESS=true` in `.env` if having display issues
 
 - **CORS issues**
-  - Backend CORS currently allows `http://localhost:5173` only.
+  - Update `FRONTEND_URL` in `.env` to match your frontend URL
+  - Default allows `http://localhost:5173` only
+
+- **Backend startup issues**
+  - Ensure all dependencies are installed: `cd backend && uv sync`
+  - Check Python version: `python --version` (should be >= 3.13)
+  - Verify uv is installed: `uv --version`
+  - Check environment variables are loaded correctly

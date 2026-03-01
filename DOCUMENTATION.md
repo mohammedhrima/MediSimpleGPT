@@ -8,9 +8,9 @@ Assistant persona name: **MediSimple**
 | | |
 |---|---|
 | **Stack** | Python · FastAPI · Playwright · Ollama · React · TypeScript |
-| **LLM** | granite3.1-dense:8b (local, via Ollama) |
-| **Database** | SQLite via aiosqlite |
-| **Browser** | Chromium via Playwright (headless=False) |
+| **LLM** | Configurable via `OLLAMA_MODEL` (default: granite3.1-dense:8b) |
+| **Database** | SQLite via aiosqlite (configurable via `DB_PATH`) |
+| **Browser** | Chromium via Playwright (headless configurable via `BROWSER_HEADLESS`) |
 
 ---
 
@@ -41,7 +41,7 @@ Every message the user sends goes through this pipeline in order:
 
 ## 2. Backend — api_server.py
 
-### 2.1 Imports
+### 2.1 Imports & Configuration
 
 | Import | What it does in this project |
 |---|---|
@@ -54,6 +54,20 @@ Every message the user sends goes through this pipeline in order:
 | `asynccontextmanager` | Powers the lifespan pattern: run code on startup and shutdown |
 | `pathlib.Path` | Cross-platform file paths — `Path("prompts.json")` works on any OS |
 | `logging` | Prints timestamped logs to terminal while the server runs |
+| `dotenv` | Loads environment variables from `.env` file |
+
+**Environment Configuration**: All hardcoded values have been moved to environment variables loaded from `backend/.env`:
+
+```python
+# Configuration from environment variables
+MODEL = os.getenv("OLLAMA_MODEL", "granite3.1-dense:8b")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+DB_PATH = os.getenv("DB_PATH", "conversations.db")
+MAX_QUERY_LENGTH = int(os.getenv("MAX_QUERY_LENGTH", "500"))
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+BROWSER_HEADLESS = os.getenv("BROWSER_HEADLESS", "false").lower() == "true"
+# ... and more
+```
 
 ---
 
@@ -124,7 +138,10 @@ def get_prompt(prompt_name: str, **variables) -> str:
 def llm(prompt: str, messages: list | None = None) -> str:
     if messages is None:
         messages = [{"role": "user", "content": prompt}]
-    response = ollama.chat(model=MODEL, messages=messages)
+    
+    # Configure Ollama client if custom host is specified
+    client = ollama.Client(host=OLLAMA_HOST) if OLLAMA_HOST != "http://localhost:11434" else ollama
+    response = client.chat(model=MODEL, messages=messages, stream=False)
     return response["message"]["content"]
 
 # Single prompt:  llm("What is diabetes?")
@@ -135,7 +152,7 @@ def llm(prompt: str, messages: list | None = None) -> str:
 #                 ])
 ```
 
-> ℹ️ **How It Works** — Ollama runs the LLM completely locally on your machine. No API key, no internet, no cost per call. It listens on `localhost:11434` by default. `granite3.1-dense:8b` means 8 billion parameters — fast enough on most modern hardware.
+> ℹ️ **How It Works** — Ollama runs the LLM completely locally on your machine. No API key, no internet, no cost per call. It listens on `localhost:11434` by default (configurable via `OLLAMA_HOST`). The model is configurable via `OLLAMA_MODEL` environment variable.
 
 > ⚠️ **Watch Out** — `llm()` is a synchronous function called from an async FastAPI endpoint. This blocks the event loop for the duration of the LLM call. Fine for a single-user demo; in production, use `asyncio.to_thread()` or an async Ollama client to avoid blocking other requests.
 
@@ -283,18 +300,16 @@ async def connect_browser(url: str) -> str:
 #### `connect_browser`
 
 ```python
-async def connect_browser(url: str) -> str:
-    global browser, page, playwright_instance
+async def get_or_create_browser() -> Browser:
+    global browser, playwright_instance
     if not playwright_instance:
         playwright_instance = await async_playwright().start()
-        browser = await playwright_instance.chromium.launch(headless=False)
-    page = await browser.new_page()
-    await page.goto(url)
-    await page.wait_for_load_state("networkidle")
-    return f"Connected to {url}"
+        browser = await playwright_instance.chromium.launch(headless=BROWSER_HEADLESS)
+        logger.info(f"Browser launched (headless={BROWSER_HEADLESS})")
+    return browser
 ```
 
-Launches a real visible Chromium window. `networkidle` waits until no network requests for 500ms — good for React/Vue SPAs that load data after the initial HTML.
+Launches a real visible Chromium window when `BROWSER_HEADLESS=false` (default), or runs headless when `BROWSER_HEADLESS=true`. `networkidle` waits until no network requests for 500ms — good for React/Vue SPAs that load data after the initial HTML.
 
 #### `get_dom`
 
@@ -495,7 +510,70 @@ db.execute("SELECT * FROM messages WHERE id = ?", (user_input,))
 
 ---
 
-## 7. Interview Prep — Likely Questions
+## 8. Environment Configuration
+
+### 8.1 Single Configuration File
+
+The application uses a **single `.env` file** at the project root for all configuration. This is a best practice for monorepo projects as it:
+
+- **Centralizes configuration**: All settings in one place
+- **Reduces duplication**: No need to sync values between files  
+- **Simplifies deployment**: One file to manage in production
+- **Improves maintainability**: Clear separation of concerns
+
+| File | Purpose |
+|---|---|
+| `.env` | All application configuration |
+| `.env.example` | Example configuration with defaults |
+
+### 8.2 Configuration Structure
+
+```bash
+# Root .env file structure
+# =============================================================================
+# MediSimpleGPT Configuration  
+# =============================================================================
+
+# Backend Configuration
+OLLAMA_MODEL=granite3.1-dense:8b
+HOST=127.0.0.1
+PORT=8000
+
+# Frontend Configuration (VITE_ prefix required)
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_MAX_QUERY_LENGTH=500
+
+# Shared Configuration
+BROWSER_HEADLESS=false
+MAX_QUERY_LENGTH=500
+```
+
+### 8.3 Why This Approach Works
+
+**Vite Frontend**: Automatically looks for `.env` files in the project root. Variables prefixed with `VITE_` are exposed to the frontend build.
+
+**Python Backend**: Uses `python-dotenv` to load from the root `.env` file:
+```python
+# Loads from project root, not backend directory
+load_dotenv(Path(__file__).parent.parent / ".env")
+```
+
+**Deployment**: Single file to configure, easier to manage secrets and environment-specific values.
+
+### 8.4 Environment Setup
+
+```bash
+# Automatic setup (recommended)
+make install  # Creates .env from .env.example
+
+# Manual setup  
+cp .env.example .env
+# Edit values as needed
+```
+
+---
+
+## 9. Interview Prep — Likely Questions
 
 ### MCP Questions
 
@@ -528,7 +606,10 @@ A: Adds headers to responses that tell browsers to allow cross-origin requests. 
 A: Async functions run directly on the event loop — use for I/O (DB, HTTP, browser). Sync functions block the thread — FastAPI runs them in a thread pool. Prefer `async` when using `aiosqlite`, Playwright, or `aiohttp`.
 
 **Q: What would you change to make this production-ready?**
-A: Replace global browser with a per-session browser pool; add authentication (JWT or OAuth); switch from SQLite to PostgreSQL; add rate limiting; use streaming LLM responses; wrap synchronous `llm()` calls in `asyncio.to_thread()` to avoid blocking the event loop; deploy frontend/backend separately; add error tracking (Sentry).
+A: Replace global browser with a per-session browser pool; add authentication (JWT or OAuth); switch from SQLite to PostgreSQL; add rate limiting; use streaming LLM responses; wrap synchronous `llm()` calls in `asyncio.to_thread()` to avoid blocking the event loop; deploy frontend/backend separately; add error tracking (Sentry); use proper secrets management instead of `.env` files; add health checks and monitoring.
+
+**Q: How do you handle configuration in this application?**
+A: All configuration is externalized to environment variables loaded from `.env` files. Backend uses `python-dotenv` to load `backend/.env`, frontend uses Vite's built-in env support for `frontend/.env`. This follows 12-factor app principles and makes deployment flexible without code changes.
 
 **Q: Why does the pipeline run follow-up detection before typo detection?**
 A: To avoid false positives. Typo detection is tuned for short medical terms (1–4 words). Follow-up messages like "explain it to me like I'm 5" are longer but contain non-standard phrasing that can confuse the typo detector. By checking follow-up status first and gating typo detection behind it, we ensure the typo check only runs on fresh, standalone queries where it is actually useful.

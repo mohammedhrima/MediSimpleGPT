@@ -6,23 +6,37 @@ import ollama
 import json
 import logging
 import aiosqlite
+import os
 from pathlib import Path
 from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeout
+from dotenv import load_dotenv
+
+# Load environment variables from root directory
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 # ─────────────────────────────────────────────
 # Logging
 # ─────────────────────────────────────────────
-logging.basicConfig(level=logging.INFO)
+log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper())
+logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────
-# Constants
+# Configuration from environment variables
 # ─────────────────────────────────────────────
-DB_PATH = "conversations.db"
+DB_PATH = os.getenv("DB_PATH", "conversations.db")
 PROMPTS_FILE = Path("prompts.json")
-MODEL = "granite3.1-dense:8b"
-MAX_QUERY_LENGTH = 500
-WIKIPEDIA_BASE = "https://www.wikipedia.org"
+MODEL = os.getenv("OLLAMA_MODEL", "granite3.1-dense:8b")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+MAX_QUERY_LENGTH = int(os.getenv("MAX_QUERY_LENGTH", "500"))
+WIKIPEDIA_BASE = os.getenv("WIKIPEDIA_BASE", "https://www.wikipedia.org")
+HOST = os.getenv("HOST", "127.0.0.1")
+PORT = int(os.getenv("PORT", "8000"))
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+BROWSER_HEADLESS = os.getenv("BROWSER_HEADLESS", "false").lower() == "true"
+BROWSER_TIMEOUT = int(os.getenv("BROWSER_TIMEOUT", "15000"))
+PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "10000"))
+ACTION_TIMEOUT = int(os.getenv("ACTION_TIMEOUT", "5000"))
 
 # ─────────────────────────────────────────────
 # Prompt cache (loaded once at startup)
@@ -60,7 +74,10 @@ def llm(prompt: str, messages: list | None = None) -> str:
     """Call the LLM. Optionally pass a full message list for multi-turn conversations."""
     if messages is None:
         messages = [{"role": "user", "content": prompt}]
-    response = ollama.chat(model=MODEL, messages=messages, stream=False)
+    
+    # Configure Ollama client if custom host is specified
+    client = ollama.Client(host=OLLAMA_HOST) if OLLAMA_HOST != "http://localhost:11434" else ollama
+    response = client.chat(model=MODEL, messages=messages, stream=False)
     return response["message"]["content"]
 
 
@@ -77,8 +94,8 @@ async def get_or_create_browser() -> Browser:
     global browser, playwright_instance
     if not playwright_instance:
         playwright_instance = await async_playwright().start()
-        browser = await playwright_instance.chromium.launch(headless=False)
-        logger.info("Browser launched")
+        browser = await playwright_instance.chromium.launch(headless=BROWSER_HEADLESS)
+        logger.info(f"Browser launched (headless={BROWSER_HEADLESS})")
     return browser
 
 
@@ -159,7 +176,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -219,7 +236,7 @@ async def connect_browser(request: dict):
     try:
         logger.info(f"Navigating to {url}")
         page = await new_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT)
 
         dom = await page.evaluate(DOM_SCRIPT)
         logger.info(f"Extracted {len(dom)} visible elements")
@@ -274,22 +291,22 @@ async def execute_actions(request: ExecuteRequest):
 
             try:
                 if action_type == "fill":
-                    await current_page.fill(selector, value, timeout=5000)
+                    await current_page.fill(selector, value, timeout=ACTION_TIMEOUT)
                     await current_page.wait_for_timeout(300)
                     results.append(f"✓ Filled '{selector}' with '{value}'")
 
                 elif action_type == "click":
-                    await current_page.click(selector, timeout=5000)
+                    await current_page.click(selector, timeout=ACTION_TIMEOUT)
                     await current_page.wait_for_timeout(300)
                     results.append(f"✓ Clicked '{selector}'")
 
                 elif action_type == "press":
-                    await current_page.press(selector, key, timeout=5000)
+                    await current_page.press(selector, key, timeout=ACTION_TIMEOUT)
                     results.append(f"✓ Pressed '{key}' on '{selector}'")
 
                 elif action_type == "wait":
                     if selector:
-                        await current_page.wait_for_selector(selector, state="visible", timeout=5000)
+                        await current_page.wait_for_selector(selector, state="visible", timeout=ACTION_TIMEOUT)
                         results.append(f"✓ Element visible: '{selector}'")
                     else:
                         await current_page.wait_for_timeout(800)
@@ -423,11 +440,11 @@ async def chat(request: dict):
         if not is_followup:
             page = await new_page()
             try:
-                await page.goto(WIKIPEDIA_BASE, wait_until="domcontentloaded", timeout=15000)
+                await page.goto(WIKIPEDIA_BASE, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT)
                 await page.fill('input[name="search"]', query)
                 await page.wait_for_timeout(400)
                 await page.press('input[name="search"]', "Enter")
-                await page.wait_for_load_state("domcontentloaded", timeout=10000)
+                await page.wait_for_load_state("domcontentloaded", timeout=PAGE_TIMEOUT)
                 logger.info(f"Wikipedia searched for: {query}")
 
                 content = await page.evaluate("""() => {

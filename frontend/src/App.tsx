@@ -6,8 +6,8 @@ import './App.css';
 
 const queryClient = new QueryClient();
 
-const API_BASE = 'http://127.0.0.1:8000';
-const MAX_QUERY_LENGTH = 500;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const MAX_QUERY_LENGTH = parseInt(import.meta.env.VITE_MAX_QUERY_LENGTH || '500');
 
 interface Message {
   role: 'user' | 'assistant';
@@ -208,7 +208,7 @@ function ChatInterface() {
             className="clear-btn"
             onClick={clearConversation}
             title="Clear conversation"
-            disabled={messages.length === 0}
+            // disabled={messages.length === 0}
           >
             {clearFeedback ? '✓ Cleared' : 'Clear chat'}
           </button>
